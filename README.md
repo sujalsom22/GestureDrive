@@ -1,60 +1,53 @@
-# GestureDrive
+# Gesture Car
 
-A robot car driven by hand gestures. A Raspberry Pi 5 reads the hand with a camera, classifies the gesture, and sends one letter (F, L, R or S) over Wi-Fi (UDP) to an ESP32 on the car, which passes it to an Arduino that drives the motors.
-
-**Team:** Md Kaif Raza (B24DS017), Kanishk Nandeshwar (B24DS010), Sujal Som (B24DS032)
-**Course:** AI Lab, hardware + software project
+Hand-gesture controlled car. A Raspberry Pi 5 reads the camera, classifies the hand gesture with MediaPipe + a scikit-learn model, and sends a number over USB serial to an Arduino that drives the motors.
 
 ## Gestures
 
-| Gesture | Meaning | Letter |
+| Gesture | Number | Action |
 |---|---|---|
-| Thumbs-up held 1 s | Arm the car | S |
-| Open palm | Forward | F |
-| Point left / right | Turn | L / R |
-| Fist | Stop and disarm | S |
-| No hand / unsure | Stop (disarm after 2 s) | S |
+| thumbs_up | 5 | Unlock |
+| fist | 2 | Lock and stop |
+| palm | 1 | Forward |
+| point_left | 3 | Spin left |
+| point_right | 4 | Spin right |
+| none | 0 | Stop (stays unlocked) |
 
-A gesture counts only if it appears in 3 of the last 5 frames.
+The car ignores everything until a thumbs-up. After that, any movement works until a fist. If the Pi stops sending for 500 ms, the Arduino stops and locks.
 
-## Files
+## Wiring (Arduino Uno to HW-094 / L298N)
 
-| File | Purpose |
+| Arduino | Driver |
 |---|---|
-| hand_test.py | Detect a hand in one frame |
-| fps_test.py, cam_fps.py | Speed tests (tracker, camera only) |
-| collect.py | Record landmark samples: `python -u collect.py LABEL PERSON [N]` |
-| train.py | Train Random Forest and kNN, save the best to gesture_model.pkl |
-| live.py | Live recognition, arming, sends letters over UDP |
-| stream.py | Browser live view at http://PI_IP:5000 |
-| listen.py | Fake car: prints letters received on UDP port 4210 |
-| data/samples.csv | Landmark features only, no video stored |
+| 2 | IN1 |
+| 3 | IN2 |
+| 4 | IN3 |
+| 7 | IN4 |
+| 5 (PWM) | ENA |
+| 6 (PWM) | ENB |
+| 8 | Start/enable line (HIGH while unlocked) |
+| GND | GND (shared with battery) |
 
-## Setup (Raspberry Pi 5, Raspberry Pi OS 64-bit)
+Left two motors in parallel on OUT1/OUT2, right two in parallel on OUT3/OUT4. Remove the ENA/ENB jumpers.
 
-    sudo apt install -y python3-picamera2 python3-opencv
-    python3 -m venv --system-site-packages venv
-    source venv/bin/activate
-    pip install mediapipe numpy scikit-learn flask pandas joblib
-    wget -O hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+## Setup
 
-## Usage
+Raspberry Pi (64-bit OS):
 
-    python -u collect.py palm yourname      # repeat for fist, point_left, point_right, thumbs_up, none
-    python train.py
-    python listen.py                        # second terminal, fake car
-    python live.py 2>/dev/null              # live recognition
-    python stream.py 2>/dev/null            # browser view
+```bash
+python3 -m venv --system-site-packages ~/gesture-env
+source ~/gesture-env/bin/activate
 
-## Results so far
+pip install mediapipe joblib scikit-learn pyserial opencv-python-headless
+python live2.py
+```
 
-- Camera only: 30 FPS. With MediaPipe: about 15 FPS (Pi CPU limit, enough for 10 Hz commands).
-- Gesture accuracy: to be measured (leave-one-person-out and outside volunteers).
+Needs `gesture_model.pkl` and `hand_landmarker.task` in the same folder as `live.py`.
 
-## Privacy
+Arduino: open `arduino/gesture_car/gesture_car.ino` in the Arduino IDE and upload.
 
-Only landmark numbers are stored, never video. Volunteers give consent and are recorded by number.
+## Tuning
 
-## Status
-
-Pi, camera, data collection, training, live recognition and UDP sending work. ESP32 bridge, Arduino code and the car are next.
+- `SPEED` in the sketch: 0 to 255.
+- Turns swapped: swap the `g == 3` and `g == 4` lines.
+- Softer turns: use `drive(0, 0, 1, 0, SPEED)` for left and `drive(1, 0, 0, 0, SPEED)` for right (pivot instead of spin).
